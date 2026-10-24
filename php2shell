@@ -14,6 +14,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -195,6 +196,36 @@ def require_repo():
     return REPO
 
 
+def prune_upstream_docs():
+    """Upstream arastirma notlarini (md) ve log dizinini sil; calisma aninda gerekmiyor."""
+    if not REPO:
+        return 0
+    up = os.path.join(REPO, "vendor", "php2shell-upstream")
+    if not os.path.isdir(up):
+        return 0
+    n = 0
+    for root, dirs, files in os.walk(up, topdown=True):
+        if ".git" in root.split(os.sep):
+            dirs[:] = []
+            continue
+        base = os.path.basename(root)
+        if base in ("logs", "src"):
+            shutil.rmtree(root, ignore_errors=True)
+            dirs[:] = []
+            n += 1
+            continue
+        for f in files:
+            if f.lower().endswith((".md", ".rst", ".txt")):
+                try:
+                    os.remove(os.path.join(root, f)); n += 1
+                except OSError:
+                    pass
+    if os.path.isdir(os.path.join(up, ".git")):
+        shutil.rmtree(os.path.join(up, ".git"), ignore_errors=True)
+        n += 1
+    return n
+
+
 def doctor():
     import shutil
     print("kit      :", KIT)
@@ -239,14 +270,22 @@ def main():
 
     if a.setup:
         require_repo()
-        script = os.path.join(REPO, "tools", "bootstrap_upstream.py")
-        if not os.path.exists(script):
-            sys.exit(c("[!] bootstrap_upstream.py bulunamadi", "r"))
-        print(c("[*] upstream exploit indiriliyor (9bie/php2shell-bypass-aslr-exp)...", "b"))
-        rc = subprocess.call([PY, script])
-        if rc == 0:
-            print(c("[+] hazir", "g"))
-        return rc
+        up = os.path.join(REPO, "vendor", "php2shell-upstream")
+        if os.path.isfile(os.path.join(up, "exploit.py")):
+            print(c("[*] upstream zaten hazir, indirme atlandi", "d"))
+        else:
+            script = os.path.join(REPO, "tools", "bootstrap_upstream.py")
+            if not os.path.exists(script):
+                sys.exit(c("[!] bootstrap_upstream.py bulunamadi", "r"))
+            print(c("[*] upstream exploit indiriliyor (9bie/php2shell-bypass-aslr-exp)...", "b"))
+            rc = subprocess.call([PY, script])
+            if rc != 0:
+                return rc
+        pruned = prune_upstream_docs()
+        if pruned:
+            print(c(f"[*] gereksiz upstream dosyalari temizlendi ({pruned})", "d"))
+        print(c("[+] hazir", "g"))
+        return 0
 
     if a.doctor:
         return doctor()
