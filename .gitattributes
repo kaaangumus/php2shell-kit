@@ -1,0 +1,7 @@
+﻿* text=auto eol=lf
+php2shell text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.conf text eol=lf
+*.ini text eol=lf

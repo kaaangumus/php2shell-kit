@@ -1,0 +1,136 @@
+{
+  "source": "ANALISIS_PHP2SHELL.md, section 2 (fixed releases) and section 1 (CVEs)",
+  "updated": "2026-10-21",
+  "branches": [
+    {
+      "branch": "5.4",
+      "affected": "5.4.0+",
+      "fixed_in": null,
+      "eol": true
+    },
+    {
+      "branch": "5.5",
+      "affected": "5.5.0+",
+      "fixed_in": null,
+      "eol": true
+    },
+    {
+      "branch": "5.6",
+      "affected": "5.6.0+",
+      "fixed_in": null,
+      "eol": true
+    },
+    {
+      "branch": "7.0",
+      "affected": "7.0.0+",
+      "fixed_in": null,
+      "eol": true
+    },
+    {
+      "branch": "7.1",
+      "affected": "7.1.0+",
+      "fixed_in": null,
+      "eol": true
+    },
+    {
+      "branch": "7.2",
+      "affected": "7.2.0+",
+      "fixed_in": null,
+      "eol": true
+    },
+    {
+      "branch": "7.3",
+      "affected": "7.3.0+",
+      "fixed_in": null,
+      "eol": true
+    },
+    {
+      "branch": "7.4",
+      "affected": "7.4.0+",
+      "fixed_in": null,
+      "eol": true,
+      "note": "minimal source backport published, no new supported release"
+    },
+    {
+      "branch": "8.0",
+      "affected": "8.0.0+",
+      "fixed_in": null,
+      "eol": true,
+      "note": "minimal source backport published, no new supported release"
+    },
+    {
+      "branch": "8.1",
+      "affected": "8.1.0+",
+      "fixed_in": null,
+      "eol": true,
+      "note": "minimal source backport published, no new supported release"
+    },
+    {
+      "branch": "8.2",
+      "affected": "8.2.0-8.2.34",
+      "fixed_in": "8.2.35",
+      "eol": false
+    },
+    {
+      "branch": "8.3",
+      "affected": "8.3.0-8.3.35",
+      "fixed_in": "8.3.36",
+      "eol": false
+    },
+    {
+      "branch": "8.4",
+      "affected": "8.4.0-8.4.26",
+      "fixed_in": "8.4.27",
+      "eol": false
+    },
+    {
+      "branch": "8.5",
+      "affected": "8.5.0-8.5.11",
+      "fixed_in": "8.5.12",
+      "eol": false
+    },
+    {
+      "branch": "8.6",
+      "affected": "8.6.0 RC4",
+      "fixed_in": "8.6.0 RC4",
+      "eol": false,
+      "note": "pre-release branch"
+    }
+  ],
+  "profiles": {
+    "8.4.26": {
+      "file": "profiles/8.4.26-bookworm.json",
+      "build": "php:8.4.26-apache (Debian bookworm, mod_php, prefork)",
+      "rce": true,
+      "verified": true
+    },
+    "8.3.33": {
+      "file": "profiles/8.3.33-wordpress.json",
+      "build": "wordpress:7.1.1-apache (PHP 8.3.33, mod_php, prefork)",
+      "rce": false,
+      "verified": false,
+      "note": "stages 1-2 leaked; stage 3 not calibrated"
+    },
+    "8.5.11": {
+      "file": "profiles/8.5.11-bookworm-aarch64.json",
+      "build": "php:8.5.11-apache (bookworm, mod_php, prefork)",
+      "rce": true,
+      "verified": true
+    },
+    "8.3.35": {
+      "file": "profiles/8.3.35-bookworm-aarch64.json",
+      "build": "php:8.3.35-apache (bookworm, mod_php, prefork)",
+      "rce": false,
+      "verified": false,
+      "note": "stages 1-2 leaked; stage 3 not calibrated"
+    },
+    "8.2.34": {
+      "file": "profiles/8.2.34-bookworm-aarch64.json",
+      "build": "php:8.2.34-apache (bookworm, mod_php, prefork)",
+      "rce": false,
+      "verified": false,
+      "note": "offsets extracted; heap leak not reproduced"
+    }
+  },
+  "coverage_note": "A version listed in a vulnerable branch is exposed, but it is exploitable only when a verified profile exists for that exact build. Vendor backports cannot be inferred from the version string."
+}

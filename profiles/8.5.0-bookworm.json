@@ -1,0 +1,36 @@
+{
+  "name": "php-8.5.0-bookworm",
+  "php_version": "8.5.0",
+  "branch": "8.5",
+  "fixed_in": "8.5.12",
+  "sapi": "apache2handler",
+  "verified": false,
+  "rce": false,
+  "oom_mb": 12,
+  "upstream_profile": "bookworm",
+  "libphp": {
+    "zif_system": "0x503510",
+    "zval_ptr_dtor": "0x731d80",
+    "htdata": null
+  },
+  "stages": {
+    "stage1_n": 841,
+    "stage1_forge_len": 63,
+    "stage2_t": 406,
+    "stage2_v": 16,
+    "stage3_pads": null,
+    "stage3_carrier": null
+  },
+  "config": {
+    "memory_limit": -1,
+    "display_errors": "On (web SAPI, stage-1 leak succeeded)",
+    "session_upload_progress": "On",
+    "workers": 1
+  },
+  "measured": {
+    "chunk_base": "0xffff90a00000",
+    "libphp_base": "0xffff8d600000"
+  },
+  "status": "leaks calibrated; stage 3 not verified",
+  "arch": "aarch64"
+}

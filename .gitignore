@@ -1,0 +1,5 @@
+﻿__pycache__/
+*.pyc
+vendor/php2shell-upstream/
+lab/rce/out/
+*.env

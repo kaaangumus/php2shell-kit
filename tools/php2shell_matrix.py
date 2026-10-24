@@ -1,0 +1,172 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+php2shell_matrix.py — profile factory for the PHP2Shell RCE chain.
+
+For each build in the matrix it starts a disposable replica (single-worker
+Apache + mod_php, display_errors=On, memory_limit=8M), runs
+php2shell_calibrate.py against it, and stores the generated profile. A profile
+is marked rce=true only when the calibrator executed a command and read the
+proof file.
+
+Usage:
+    python3 php2shell_matrix.py --repo-dir /tmp/php2shell-rce
+    python3 php2shell_matrix.py --only 8.3.35
+    python3 php2shell_matrix.py --full-search        # slow stage-2 sweep
+
+Authorized testing only.
+"""
+
+from __future__ import annotations
+from php2shell_paths import default_repo_dir, prepare_lab_out
+
+import argparse
+import json
+import os
+import platform
+import shutil
+import subprocess
+import sys
+import time
+import urllib.request
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+LAB = os.path.join(ROOT, "lab", "rce")
+PROFILES = os.path.join(ROOT, "profiles")
+
+BUILDS = [
+    {"key": "8.2.34", "image": "php:8.2.34-apache", "port": 8090},
+    {"key": "8.3.35", "image": "php:8.3.35-apache", "port": 8091},
+    {"key": "8.4.26", "image": "php:8.4.26-apache", "port": 8092},
+    {"key": "8.5.11", "image": "php:8.5.11-apache", "port": 8093},
+    {"key": "8.4.25", "image": "php:8.4.25-apache", "port": 8108},
+    {"key": "8.5.10", "image": "php:8.5.10-apache", "port": 8109},
+]
+
+
+def arch_label() -> str:
+    machine = platform.machine().lower()
+    return {"arm64": "aarch64", "x86_64": "amd64", "amd64": "amd64"}.get(machine, machine)
+
+
+def docker(*args, capture=True, timeout=600):
+    return subprocess.run(["docker", *args], capture_output=capture, text=True, timeout=timeout)
+
+
+def container_arch(name: str) -> str | None:
+    result = docker("exec", name, "uname", "-m")
+    if result.returncode != 0:
+        return None
+    return {"aarch64": "aarch64", "arm64": "aarch64",
+            "x86_64": "amd64", "amd64": "amd64"}.get(result.stdout.strip().lower())
+
+
+def wait_http(url: str, timeout: float = 30.0) -> bool:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as resp:
+                if resp.status == 200:
+                    return True
+        except Exception:
+            time.sleep(0.5)
+    return False
+
+
+def run_build(build, args) -> dict:
+    label = f"{build['key']}-bookworm-{arch_label()}"
+    name = f"p2s-matrix-{build['key'].replace('.', '')}"
+    outdir = prepare_lab_out(os.path.join(LAB, "out", build["key"]))
+    proof = os.path.join(outdir, "p1")
+
+    print(f"\n=== {label} ({build['image']}) ===", flush=True)
+    docker("rm", "-f", name)
+    print("[*] pulling/starting image", flush=True)
+    run = docker("run", "-d", "--name", name,
+                 "-p", f"127.0.0.1:{build['port']}:80",
+                 "-v", f"{LAB}/webroot:/var/www/html:ro",
+                 "-v", f"{LAB}/php.ini:/usr/local/etc/php/conf.d/zz-matrix.ini:ro",
+                 "-v", f"{LAB}/apache.conf:/etc/apache2/conf-enabled/zz-matrix.conf:ro",
+                 "-v", f"{outdir}:/out",
+                 build["image"], timeout=900)
+    if run.returncode != 0:
+        print("[!] docker run failed:", run.stderr.strip()[:300])
+        return {"label": label, "status": "docker-failed"}
+
+    url = f"http://127.0.0.1:{build['port']}/index.php"
+    if not wait_http(url):
+        print("[!] replica did not answer")
+        docker("rm", "-f", name)
+        return {"label": label, "status": "no-http"}
+
+    actual_arch = container_arch(name) or arch_label()
+    label = f"{build['key']}-bookworm-{actual_arch}"
+    print(f"[*] architecture: {actual_arch}", flush=True)
+
+    cmd = [sys.executable, os.path.join(HERE, "php2shell_calibrate.py"),
+           "--target", url, "--container", name,
+           "--repo-dir", args.repo_dir,
+           "--proof-file", proof,
+           "--distro", f"bookworm-{actual_arch}",
+           "--arch", actual_arch,
+           "--out-dir", PROFILES]
+    if not args.full_search:
+        cmd += ["--stage2-t", "406"]
+    print("[*] calibrating", flush=True)
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=args.timeout)
+        log = result.stdout + result.stderr
+    except subprocess.TimeoutExpired as exc:
+        log = (exc.stdout or "") + (exc.stderr or "") + "\n[!] calibration timeout"
+    with open(os.path.join(outdir, "calibrate.log"), "w", encoding="utf-8") as fh:
+        fh.write(log)
+    print("\n".join(log.strip().splitlines()[-12:]), flush=True)
+
+    if not args.keep:
+        docker("rm", "-f", name)
+
+    profile = os.path.join(PROFILES, f"{build['key']}-bookworm-{arch_label()}.json")
+    status = "no-profile"
+    rce = False
+    if os.path.isfile(profile):
+        try:
+            data = json.load(open(profile, encoding="utf-8"))
+            rce = bool(data.get("rce"))
+            status = "rce" if rce else "leaks-only"
+        except ValueError:
+            status = "bad-profile"
+    return {"label": label, "status": status, "rce": rce, "profile": profile}
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="Build PHP2Shell profiles for a matrix of PHP images.")
+    ap.add_argument("--repo-dir", default=default_repo_dir())
+    ap.add_argument("--only", default=None, help="comma-separated build keys (e.g. 8.4.26,8.3.35)")
+    ap.add_argument("--full-search", action="store_true", help="do not hint stage2 (slow)")
+    ap.add_argument("--keep", action="store_true", help="keep containers for inspection")
+    ap.add_argument("--timeout", type=float, default=900.0)
+    args = ap.parse_args()
+
+    if not shutil.which("docker"):
+        print("docker not found", file=sys.stderr)
+        return 4
+    os.makedirs(PROFILES, exist_ok=True)
+    builds = BUILDS
+    if args.only:
+        wanted = {x.strip() for x in args.only.split(",")}
+        builds = [b for b in BUILDS if b["key"] in wanted]
+    results = [run_build(b, args) for b in builds]
+
+    print("\n=== coverage ===")
+    for r in results:
+        print(f"  {r['label']:28} {r['status']:12} {r.get('profile', '')}")
+    report_dir = os.path.join(ROOT, "docs", "calibration-logs")
+    os.makedirs(report_dir, exist_ok=True)
+    with open(os.path.join(report_dir, "matrix_report.json"), "w", encoding="utf-8") as fh:
+        json.dump(results, fh, indent=2)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

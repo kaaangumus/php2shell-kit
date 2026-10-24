@@ -1,0 +1,41 @@
+{
+  "name": "php-8.3.33-wordpress-mod_php",
+  "php_version": "8.3.33",
+  "branch": "8.3",
+  "fixed_in": "8.3.36",
+  "sapi": "apache2handler",
+  "verified": false,
+  "rce": false,
+  "upstream_profile": "bookworm",
+  "libphp": {
+    "zif_system": "0x377248",
+    "zval_ptr_dtor": "0x4737e0",
+    "htdata": null
+  },
+  "stages": {
+    "stage1_n": 815,
+    "stage1_forge_len": 63,
+    "stage2_t": 406,
+    "stage2_v": 16,
+    "stage3_pads": null,
+    "stage3_carrier": null
+  },
+  "requirements": {
+    "display_errors": "On",
+    "memory_limit": "8M",
+    "max_input_vars": 1000,
+    "session_upload_progress": "On",
+    "session_use_cookies": 1,
+    "session_use_strict_mode": 0,
+    "workers": 1
+  },
+  "measured": {
+    "chunk_base_example": "0xffffae200000",
+    "libphp_base_example": "0xffffb0300000",
+    "stage3_http_session_vars": "chunk+0x56180",
+    "stage3_ref_buffers": "chunk+0x5d068+n*0xa0"
+  },
+  "status": "stage 1 (heap leak) and stage 2 (libphp leak) reproduced; stage 3 not calibrated, no RCE",
+  "distro": "debian",
+  "arch": "aarch64"
+}

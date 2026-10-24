@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/devploit/php2shell/blob/main/profiles/schema.json",
+  "title": "PHP2Shell build profile",
+  "description": "Per-build profile with libphp offsets, heap calibration parameters and RCE verification status.",
+  "type": "object",
+  "required": [
+    "name",
+    "php_version",
+    "branch",
+    "sapi",
+    "arch",
+    "rce",
+    "libphp",
+    "stages",
+    "config"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^php-[0-9]+\\.[0-9]+\\.[0-9]+-",
+      "description": "Unique profile identifier: php-<version>-<distro>-<arch>."
+    },
+    "php_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+      "description": "Exact PHP version, e.g. 8.4.26."
+    },
+    "branch": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "PHP release branch, e.g. 8.4."
+    },
+    "fixed_in": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "First patched version in this branch, or null for EOL branches."
+    },
+    "sapi": {
+      "type": "string",
+      "enum": [
+        "apache2handler"
+      ],
+      "description": "Server API. Only apache2handler (mod_php prefork) is supported."
+    },
+    "verified": {
+      "type": "boolean",
+      "description": "Whether the profile has been tested against a real target."
+    },
+    "rce": {
+      "type": "boolean",
+      "description": "True only when a real command proof (uid=...) was obtained."
+    },
+    "upstream_profile": {
+      "type": "string",
+      "enum": [
+        "bookworm",
+        "bookworm-noexpose",
+        "lab"
+      ],
+      "description": "Upstream exploit profile name passed to exploit.py."
+    },
+    "distro": {
+      "type": "string",
+      "description": "Target distribution, e.g. debian, ubuntu, alpine."
+    },
+    "arch": {
+      "type": "string",
+      "enum": [
+        "aarch64",
+        "amd64"
+      ],
+      "description": "CPU architecture."
+    },
+    "libphp": {
+      "type": "object",
+      "description": "Symbol offsets relative to the libphp.so load base.",
+      "required": [
+        "zif_system",
+        "zval_ptr_dtor"
+      ],
+      "properties": {
+        "zif_system": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]+$",
+          "description": "Offset of zif_system (the C handler behind PHP's system())."
+        },
+        "zval_ptr_dtor": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]+$",
+          "description": "Offset of zval_ptr_dtor (the destructor the stage-3 hijack replaces)."
+        },
+        "htdata": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "pattern": "^0x[0-9a-fA-F]+$",
+          "description": "Chunk-relative offset of the 167-byte live string used as stage-3 carrier. Null when stage 3 is not calibrated."
+        }
+      },
+      "additionalProperties": false
+    },
+    "stages": {
+      "type": "object",
+      "description": "Heap calibration parameters for each exploit stage.",
+      "properties": {
+        "stage1_n": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of multipart fields to place before the forged block in stage 1."
+        },
+        "stage1_forge_len": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Byte length of the forged zend_string block in stage 1."
+        },
+        "stage2_t": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Target field index for the stage-2 libphp pointer leak."
+        },
+        "stage2_v": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Value parameter for stage-2 calibration."
+        },
+        "stage3_pads": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "description": "Padding pairs for stage-3 heap grooming. Null when stage 3 is not calibrated."
+        },
+        "stage3_carrier": {
+          "type": [
+            "boolean",
+            "null"
+          ],
+          "description": "Whether the 167-byte carrier string is used. Null when stage 3 is not calibrated."
+        }
+      },
+      "additionalProperties": false
+    },
+    "config": {
+      "type": "object",
+      "description": "Target runtime configuration used during calibration.",
+      "properties": {
+        "memory_limit": {
+          "type": "integer",
+          "description": "PHP memory_limit in bytes, or -1 for unlimited."
+        },
+        "display_errors": {
+          "type": "string",
+          "description": "display_errors setting and how it was determined."
+        },
+        "session_upload_progress": {
+          "type": "string",
+          "description": "session.upload_progress.enabled value."
+        },
+        "workers": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of Apache prefork workers."
+        }
+      },
+      "additionalProperties": false
+    },
+    "measured": {
+      "type": "object",
+      "description": "Addresses observed during calibration (informational, not used at runtime).",
+      "properties": {
+        "chunk_base": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]+$",
+          "description": "Zend MM chunk base address from stage-1 leak."
+        },
+        "libphp_base": {
+          "type": "string",
+          "pattern": "^0x[0-9a-fA-F]+$",
+          "description": "libphp.so load base from stage-2 leak."
+        }
+      },
+      "additionalProperties": false
+    },
+    "status": {
+      "type": "string",
+      "description": "Human-readable calibration result summary."
+    },
+    "oom_mb": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "OOM body size in MiB passed to the upstream exploit."
+    },
+    "oom_margin_mb": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Margin above memory_limit used to trigger OOM."
+    },
+    "memory_limit_tested_mb": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "description": "memory_limit values (in MiB) where RCE was verified."
+    }
+  },
+  "if": {
+    "properties": {
+      "rce": {
+        "const": true
+      }
+    }
+  },
+  "then": {
+    "required": [
+      "oom_mb"
+    ],
+    "properties": {
+      "libphp": {
+        "required": [
+          "zif_system",
+          "zval_ptr_dtor",
+          "htdata"
+        ],
+        "properties": {
+          "htdata": {
+            "type": "string"
+          }
+        }
+      },
+      "stages": {
+        "required": [
+          "stage1_n",
+          "stage1_forge_len",
+          "stage2_t",
+          "stage2_v",
+          "stage3_pads",
+          "stage3_carrier"
+        ],
+        "properties": {
+          "stage3_pads": {
+            "type": "array"
+          },
+          "stage3_carrier": {
+            "type": "boolean"
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": false
+}

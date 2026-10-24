@@ -1,0 +1,57 @@
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: wordpress
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress
+      MYSQL_ROOT_PASSWORD: rootpass
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpass"]
+      interval: 5s
+      retries: 20
+
+  wordpress:
+    image: wordpress:7.1.1-apache
+    mem_limit: 512m
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+      WORDPRESS_DEBUG: "1"
+      PHP2SHELL_LAB_ENABLED: "1"
+      PHP2SHELL_LAB_TOKEN: "local-only-php2shell-lab"
+      # Pin to 7.1.1: block core/plugin/theme auto-updates
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_AUTO_UPDATE_CORE', false);
+        define('AUTOMATIC_UPDATER_DISABLED', true);
+        define('WP_DISABLE_FATAL_ERROR_HANDLER', true);
+    volumes:
+      # Volumen con nombre: evita los problemas de permisos de los bind mounts
+      # de Docker Desktop sobre ~/Downloads (fakeowner/TCC).
+      - wp_data:/var/www/html
+
+  wpcli:
+    image: wordpress:cli
+    profiles: ["cli"]
+    depends_on: [wordpress]
+    user: "33:33"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress
+      WORDPRESS_DB_NAME: wordpress
+    volumes:
+      - wp_data:/var/www/html
+
+volumes:
+  db_data:
+  wp_data:

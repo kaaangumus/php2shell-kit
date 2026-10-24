@@ -1,0 +1,23 @@
+{
+  "name": "php-7.4.33-bookworm-aarch64",
+  "php_version": "7.4.33",
+  "branch": "7.4",
+  "fixed_in": null,
+  "sapi": "apache2handler",
+  "verified": false,
+  "rce": false,
+  "upstream_profile": "bookworm",
+  "distro": "debian",
+  "arch": "aarch64",
+  "libphp": {
+    "zif_system": "0x309640",
+    "zval_ptr_dtor": "0x3f6024"
+  },
+  "stages": {},
+  "config": {
+    "memory_limit": 8388608,
+    "display_errors": "On",
+    "workers": 1
+  },
+  "status": "offsets only; heap not calibrated (EOL branch)"
+}

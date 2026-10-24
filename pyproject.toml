@@ -1,0 +1,38 @@
+[project]
+name = "php2shell"
+version = "1.0.0"
+description = "Pre-auth RCE research toolkit for CVE-2026-109618 / CVE-2026-109619"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [{ name = "devploit" }]
+keywords = ["security", "research", "php", "rce", "exploit"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+]
+
+[project.urls]
+Repository = "https://github.com/devploit/php2shell"
+Documentation = "https://github.com/devploit/php2shell/blob/main/docs/php2shell-analysis.md"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.setuptools]
+packages = []
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
