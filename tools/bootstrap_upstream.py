@@ -4,7 +4,7 @@
 The upstream repository has no explicit license, so its source is not vendored
 and no patch file is redistributed. This script only clones the pinned commit.
 The toolkit applies the SNI fix and the heap-parameter overrides in place at
-runtime; the same changes are documented in docs/upstream-changes.md for manual
+runtime; the same changes are documented upstream at
 use.
 
 Usage:
@@ -43,7 +43,7 @@ def main() -> int:
         print(f"cannot checkout {PIN}: {result.stderr.strip()}", file=sys.stderr)
         return result.returncode
     print(f"upstream ready: {VENDOR}")
-    print("runtime changes: docs/upstream-changes.md")
+    print("runtime changes: https://github.com/devploit/php2shell/blob/main/docs/upstream-changes.md")
     return 0
 
 
